@@ -132,7 +132,8 @@
       .main { padding: 8px;}
     }
   </style>
-  <script src="https://apis.google.com/js/api.js"></script>
+  <!-- Google API 加載時自動呼叫 handleClientLoad -->
+  <script src="https://apis.google.com/js/api.js?onload=handleClientLoad" async defer></script>
 </head>
 <body>
   <div class="container">
@@ -214,6 +215,10 @@
     }
 
     function handleAuthClick() {
+      if (!GoogleAuth) {
+        alert('Google API 尚未初始化，請稍後再試。');
+        return;
+      }
       GoogleAuth.signIn();
     }
 
@@ -477,11 +482,7 @@
     // 初始化
     renderSubjects();
     renderNotesList();
-
-    // Google API 啟動
-    window.onload = function() {
-      handleClientLoad();
-    };
+    // 不再需要 window.onload，gapi 會自動 call handleClientLoad
   </script>
 </body>
 </html>
