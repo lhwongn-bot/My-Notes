@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>Notes 資料庫 with Google Drive</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; font-family: Arial, 'Microsoft JhengHei', sans-serif; background: #f4f6fa; }
+    .container { display: flex; height: 100vh; }
+    .sidebar {
+      width: 240px;
+      background: #29344d;
+      color: #fff;
+      padding: 24px 8px;
+      box-sizing: border-box;
+      display: flex; flex-direction: column;
+    }
+    .sidebar h2 { font-size: 18px; margin-bottom: 12px; }
+    .subjects { flex: 1; overflow-y: auto; }
+    .subject-row {
+      display: flex; align-items: center; margin-bottom: 6px;
+    }
+    .subject {
+      flex: 1;
+      padding: 10px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-right: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .subject.active, .subject:hover { background: #42507a; }
+    .subject-actions {
+      display: flex; gap: 2px;
+    }
+    .subject-actions button {
+      background: #42507a;
+      border: none;
+      color: #fff;
+      border-radius: 3px;
+      font-size: 12px;
+      padding: 2px 7px;
+      cursor: pointer;
+    }
+    .subject-actions button:hover { background: #6076b1; }
+    .add-subject { border: none; background: #42507a; color: #fff; padding: 7px 0; border-radius: 5px; cursor: pointer; margin-top: 10px;}
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .search {
+      flex: 1;
+      margin-right: 16px;
+      padding: 8px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+    .add-note { background: #42507a; color: #fff; border: none; border-radius: 5px; padding: 9px 20px; cursor: pointer;}
+    .notes-list {
+      flex: 1;
+      overflow-y: auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 18px;
+      box-shadow: 0 1px 6px rgba(41,52,77,0.08);
+    }
+    .note-item {
+      padding: 9px 10px;
+      border-bottom: 1px solid #ececec;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .note-item:last-child { border-bottom: none; }
+    .note-item.active, .note-item:hover { background: #f1f3fa; }
+    .note-title { font-weight: 500; }
+    .note-tags { font-size: 12px; color: #666; }
+    .note-date { font-size: 12px; color: #999; }
+    .note-editor {
+      background: #fff;
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 1px 6px rgba(41,52,77,0.08);
+    }
+    .note-editor input, .note-editor textarea {
+      width: 100%;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      padding: 8px;
+      font-size: 16px;
+    }
+    .note-editor textarea { height: 120px; resize: vertical;}
+    .note-editor .actions { text-align: right;}
+    .note-editor button {
+      background: #42507a;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 8px 18px;
+      cursor: pointer;
+      margin-left: 8px;
+    }
+    .note-attachment {
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #42507a;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .note-attachment a { color: #42507a; text-decoration: underline; }
+    .google-login { margin-bottom: 12px; }
+    .user-info { font-size: 13px; color: #888; margin-bottom: 6px; }
+    @media (max-width: 800px) {
+      .container { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; padding: 8px;}
+      .main { padding: 8px;}
+    }
+  </style>
+  <script src="https://apis.google.com/js/api.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar: 科目列表 -->
+    <div class="sidebar">
+      <h2>科目</h2>
+      <div class="google-login" id="googleLogin">
+        <button onclick="handleAuthClick()">Google 登入</button>
+      </div>
+      <div class="user-info" id="userInfo" style="display:none;"></div>
+      <div class="subjects" id="subjectList"></div>
+      <button class="add-subject" onclick="addSubject()">＋ 新增科目</button>
+    </div>
+    <!-- Main: 筆記列表 + 筆記內容 -->
+    <div class="main">
+      <div class="topbar">
+        <input class="search" id="searchInput" type="text" placeholder="搜尋筆記/標籤..." oninput="renderNotesList()">
+        <button class="add-note" onclick="addNote()">＋ 新增筆記</button>
+      </div>
+      <div class="notes-list" id="notesList"></div>
+      <div class="note-editor" id="noteEditor" style="display:none;">
+        <input id="noteTitle" type="text" placeholder="筆記標題">
+        <input id="noteTags" type="text" placeholder="標籤（可用逗號分隔）">
+        <textarea id="noteContent" placeholder="內容"></textarea>
+        <div class="note-attachment" id="noteAttachment" style="display:none;">
+          <span>已上傳檔案：</span>
+          <a href="#" id="attachmentLink" target="_blank"></a>
+          <button onclick="removeAttachment()" type="button" style="padding:2px 8px;background:#e57373;">移除</button>
+        </div>
+        <input type="file" id="noteFile" onchange="handleFileUpload(event)">
+        <div class="actions">
+          <button onclick="saveNote()">儲存</button>
+          <button onclick="cancelEdit()">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Google OAuth 2.0 & Drive API
+    const CLIENT_ID = '399352736835-lpb9ka9i5p4oed1id7j6q2b688k259ve.apps.googleusercontent.com';
+    const API_KEY = '';
+    const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
+    const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+    let GoogleAuth = null;
+    let currentUser = null;
+
+    function updateSigninStatus(isSignedIn) {
+      if (isSignedIn) {
+        document.getElementById('googleLogin').style.display = 'none';
+        let profile = GoogleAuth.currentUser.get().getBasicProfile();
+        currentUser = profile;
+        document.getElementById('userInfo').style.display = '';
+        document.getElementById('userInfo').innerText = `已登入：${profile.getEmail()}`;
+      } else {
+        document.getElementById('googleLogin').style.display = '';
+        document.getElementById('userInfo').style.display = 'none';
+        currentUser = null;
+      }
+    }
+
+    function handleClientLoad() {
+      gapi.load('client:auth2', initClient);
+    }
+
+    function initClient() {
+      gapi.client.init({
+        apiKey: API_KEY,
+        clientId: CLIENT_ID,
+        discoveryDocs: DISCOVERY_DOCS,
+        scope: SCOPES
+      }).then(function () {
+        GoogleAuth = gapi.auth2.getAuthInstance();
+        updateSigninStatus(GoogleAuth.isSignedIn.get());
+        GoogleAuth.isSignedIn.listen(updateSigninStatus);
+      }, function(error) {
+        alert('Google API 初始化失敗！');
+      });
+    }
+
+    function handleAuthClick() {
+      GoogleAuth.signIn();
+    }
+
+    // 本地資料
+    let subjects = JSON.parse(localStorage.getItem('subjects')||'["數學","英文","電腦"]');
+    let notes = JSON.parse(localStorage.getItem('notes')||'[]');
+    let currentSubject = subjects[0];
+    let editingNoteId = null;
+    let attachmentData = null; // { name, url }
+
+    function saveData() {
+      localStorage.setItem('subjects', JSON.stringify(subjects));
+      localStorage.setItem('notes', JSON.stringify(notes));
+    }
+
+    function renderSubjects() {
+      const list = document.getElementById('subjectList');
+      list.innerHTML = '';
+      subjects.forEach((subj, idx) => {
+        const row = document.createElement('div');
+        row.className = 'subject-row';
+
+        const div = document.createElement('div');
+        div.className = 'subject' + (subj === currentSubject ? ' active' : '');
+        div.innerText = subj;
+        div.title = subj;
+        div.onclick = () => { currentSubject = subj; renderSubjects(); renderNotesList(); cancelEdit(); }
+        row.appendChild(div);
+
+        const actions = document.createElement('div');
+        actions.className = 'subject-actions';
+
+        // 修改
+        const editBtn = document.createElement('button');
+        editBtn.innerHTML = '✎';
+        editBtn.title = '修改名稱';
+        editBtn.onclick = (e) => {
+          e.stopPropagation();
+          const newName = prompt("請輸入新的科目名稱：", subj);
+          if (newName && newName !== subj && !subjects.includes(newName)) {
+            subjects[idx] = newName;
+            notes.forEach(n => { if (n.subject === subj) n.subject = newName; });
+            if (currentSubject === subj) currentSubject = newName;
+            saveData();
+            renderSubjects();
+            renderNotesList();
+            cancelEdit();
+          } else if (subjects.includes(newName)) {
+            alert("科目名稱已存在！");
+          }
+        };
+        actions.appendChild(editBtn);
+
+        // 刪除
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '🗑';
+        delBtn.title = '刪除科目';
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (confirm('確定要刪除此科目及所有相關筆記？')) {
+            subjects.splice(idx,1);
+            notes = notes.filter(n=>n.subject!==subj);
+            if (currentSubject === subj) currentSubject = subjects[0] || '';
+            saveData();
+            renderSubjects();
+            renderNotesList();
+            cancelEdit();
+          }
+        };
+        actions.appendChild(delBtn);
+
+        row.appendChild(actions);
+        list.appendChild(row);
+      });
+    }
+
+    function addSubject() {
+      const name = prompt("請輸入新科目名稱：");
+      if (name && !subjects.includes(name)) {
+        subjects.push(name);
+        saveData();
+        currentSubject = name;
+        renderSubjects();
+        renderNotesList();
+        cancelEdit();
+      } else if (subjects.includes(name)) {
+        alert("科目名稱已存在！");
+      }
+    }
+
+    function renderNotesList() {
+      const kw = document.getElementById('searchInput').value.trim().toLowerCase();
+      const list = document.getElementById('notesList');
+      let filtered = notes.filter(n => n.subject === currentSubject);
+      if (kw) {
+        filtered = filtered.filter(n =>
+          (n.title && n.title.toLowerCase().includes(kw)) ||
+          (n.tags && n.tags.join(',').toLowerCase().includes(kw)) ||
+          (n.content && n.content.toLowerCase().includes(kw))
+        );
+      }
+      list.innerHTML = '';
+      filtered.forEach(n => {
+        const div = document.createElement('div');
+        div.className = 'note-item' + (editingNoteId===n.id ? ' active':'');
+        div.onclick = () => editNote(n.id);
+        div.innerHTML = `<div>
+            <div class="note-title">${n.title||'(無標題)'}</div>
+            <div class="note-tags">${n.tags ? n.tags.join(', ') : ''}</div>
+          </div>
+          <div>
+            <span class="note-date">${n.updated_at ? n.updated_at.substr(0,10) : ''}</span>
+          </div>`;
+        list.appendChild(div);
+      });
+      if (filtered.length===0) list.innerHTML = '<div style="color:#999;">暫無筆記</div>';
+    }
+
+    function addNote() {
+      editingNoteId = null;
+      showEditor({title:'',tags:[],content:'', attachment:null});
+    }
+
+    function editNote(id) {
+      editingNoteId = id;
+      const note = notes.find(n=>n.id===id);
+      showEditor(note);
+    }
+
+    function showEditor(note) {
+      document.getElementById('noteEditor').style.display='block';
+      document.getElementById('noteTitle').value = note.title || '';
+      document.getElementById('noteTags').value = note.tags ? note.tags.join(',') : '';
+      document.getElementById('noteContent').value = note.content || '';
+      document.getElementById('noteFile').value = '';
+      attachmentData = note.attachment || null;
+      renderAttachment();
+      window.scrollTo({top:0});
+    }
+
+    function saveNote() {
+      const title = document.getElementById('noteTitle').value.trim();
+      const tags = document.getElementById('noteTags').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const content = document.getElementById('noteContent').value.trim();
+      const now = new Date().toISOString();
+      if (editingNoteId) {
+        let n = notes.find(n=>n.id===editingNoteId);
+        n.title = title;
+        n.tags = tags;
+        n.content = content;
+        n.updated_at = now;
+        n.attachment = attachmentData;
+      } else {
+        notes.push({
+          id: Math.random().toString(36).substr(2,9),
+          subject: currentSubject,
+          title, tags, content,
+          created_at: now,
+          updated_at: now,
+          attachment: attachmentData
+        });
+      }
+      saveData();
+      cancelEdit();
+      renderNotesList();
+    }
+
+    function cancelEdit() {
+      document.getElementById('noteEditor').style.display='none';
+      editingNoteId = null;
+      attachmentData = null;
+    }
+
+    // Google Drive 上傳檔案
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) {
+        alert("請先登入 Google 帳戶！");
+        e.target.value = '';
+        return;
+      }
+      if (file.size > 10*1024*1024) {
+        alert('檔案請小於 10MB');
+        e.target.value = '';
+        return;
+      }
+      // 上傳到 Google Drive
+      uploadFileToDrive(file, function(link, fileName){
+        attachmentData = {
+          name: fileName,
+          url: link
+        };
+        renderAttachment();
+        alert("上傳成功！檔案連結已自動加入附件。");
+      });
+    }
+
+    function uploadFileToDrive(file, callback) {
+      var metadata = {
+        'name': file.name,
+        'mimeType': file.type
+      };
+      var accessToken = gapi.auth.getToken().access_token;
+      var form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+        body: form,
+      }).then(res => res.json())
+        .then(function(val) {
+          if (!val.id) {
+            alert('上傳失敗！');
+            return;
+          }
+          // 設定成公開 anyone 可讀
+          setFilePublic(val.id, function(){
+            const link = 'https://drive.google.com/file/d/' + val.id + '/view?usp=sharing';
+            callback(link, file.name);
+          });
+        });
+    }
+
+    function setFilePublic(fileId, callback) {
+      var accessToken = gapi.auth.getToken().access_token;
+      fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ role: 'reader', type: 'anyone' })
+      }).then(() => {
+        callback();
+      });
+    }
+
+    function renderAttachment() {
+      const att = document.getElementById('noteAttachment');
+      const link = document.getElementById('attachmentLink');
+      if (attachmentData) {
+        att.style.display = '';
+        link.textContent = attachmentData.name;
+        link.href = attachmentData.url;
+      } else {
+        att.style.display = 'none';
+        link.textContent = '';
+        link.href = '#';
+      }
+    }
+
+    function removeAttachment() {
+      attachmentData = null;
+      document.getElementById('noteFile').value = '';
+      renderAttachment();
+    }
+
+    // 初始化
+    renderSubjects();
+    renderNotesList();
+
+    // Google API 啟動
+    window.onload = function() {
+      handleClientLoad();
+    };
+  </script>
+</body>
+</html>
