@@ -481,36 +481,56 @@
 
       const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(file.name)}`;
 
-      const reader = new FileReader();
-      reader.onload = function() {
-        const base64Content = base64ArrayBuffer(reader.result);
-        fetch(apiUrl, {
-          method: 'PUT',
-          headers: {
-            "Authorization": "token " + token,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
+      // 先確認檔案是否存在，決定是否要帶 sha（更新）
+      fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          "Authorization": "token " + token,
+          "Accept": "application/vnd.github+json"
+        }
+      }).then(res => {
+        if (res.status === 200) {
+          // 檔案已存在，需帶 sha
+          return res.json();
+        } else {
+          return null; // 不存在
+        }
+      }).then(existingFile => {
+        const reader = new FileReader();
+        reader.onload = function() {
+          const base64Content = base64ArrayBuffer(reader.result);
+          let body = {
             message: `Add attachment for [${currentSubject}]: ${file.name}`,
             content: base64Content
-          })
-        })
-        .then(res => res.json())
-        .then(res => {
-          if (res.content && res.content.download_url) {
-            msgSpan.innerHTML = `✅ 上傳成功：<a href="#" onclick="openInViewer('${res.content.download_url}');return false;">${file.name}</a>`;
-            renderSubjectAttachmentsList();
-            loadAttachmentSelect();
-          } else if (res && res.message) {
-            msgSpan.innerText = "❌ " + res.message;
-          } else {
-            msgSpan.innerText = "❌ 上傳失敗";
+          };
+          if (existingFile && existingFile.sha) {
+            body.sha = existingFile.sha;
           }
-        }).catch(() => {
-          msgSpan.innerText = "❌ 上傳失敗";
-        });
-      };
-      reader.readAsArrayBuffer(file);
+          fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+              "Authorization": "token " + token,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
+          })
+          .then(res => res.json())
+          .then(res => {
+            if (res.content && res.content.download_url) {
+              msgSpan.innerHTML = `✅ 上傳成功：<a href="#" onclick="openInViewer('${res.content.download_url}');return false;">${file.name}</a>`;
+              renderSubjectAttachmentsList();
+              loadAttachmentSelect();
+            } else if (res && res.message) {
+              msgSpan.innerText = "❌ " + res.message;
+            } else {
+              msgSpan.innerText = "❌ 上傳失敗";
+            }
+          }).catch(() => {
+            msgSpan.innerText = "❌ 上傳失敗";
+          });
+        };
+        reader.readAsArrayBuffer(file);
+      });
     }
 
     // 渲染附件清單區
@@ -540,19 +560,27 @@
         });
     }
 
-    // 刪除附件
+    // 刪除附件（debug修正版）
     function deleteSubjectAttachment(fileName) {
       const token = getGithubToken();
       if (!token) { alert("請輸入 GitHub Token"); return; }
       if (!confirm(`確定要刪除 ${fileName} 嗎？`)) return;
-      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`)
+      const path = `${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`;
+      // 1. 先查 sha（需用未編碼的 currentSubject/fileName 給 API）
+      const shaApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`;
+      fetch(shaApiUrl, {
+        headers: {
+          "Authorization": "token " + token,
+          "Accept": "application/vnd.github+json"
+        }
+      })
         .then(res => res.json())
         .then(file => {
           if (!file.sha) {
             alert("找不到檔案 sha，無法刪除。");
             return;
           }
-          fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`, {
+          fetch(shaApiUrl, {
             method: 'DELETE',
             headers: {
               "Authorization": "token " + token,
@@ -579,8 +607,6 @@
 
     // 打開文件時用 viewer 頁籤 (pdf, 圖片, 文字、office…)
     function openInViewer(downloadUrl) {
-      // 支持 pdf/jpg/png/txt/doc/docx/xls/xlsx/ppt/pptx
-      // 對於 office 可用 Google Docs Viewer，pdf 直接新分頁，圖片直接顯示
       const lower = downloadUrl.toLowerCase();
       if (lower.endsWith('.pdf')) {
         window.open(downloadUrl, '_blank');
