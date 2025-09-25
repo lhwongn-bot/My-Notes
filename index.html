@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Notes 資料庫 with 科目附件管理</title>
+  <title>Notes 資料庫 with 多附件預覽</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { margin: 0; font-family: Arial, 'Microsoft JhengHei', sans-serif; background: #f4f6fa; }
@@ -115,14 +115,44 @@
       cursor: pointer;
       margin-left: 8px;
     }
-    .note-attachment {
+    .note-attachments {
       margin-bottom: 8px;
       font-size: 13px;
       color: #42507a;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      flex-wrap: wrap;
     }
+    .note-attachments-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .note-attachments-list .att-chip {
+      background: #e9edfa;
+      padding: 4px 12px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .note-attachments-list .att-chip a {
+      color: #42507a;
+      text-decoration: underline;
+      margin-right: 4px;
+    }
+    .note-attachments-list .att-chip button {
+      background: #e57373;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 12px;
+      padding: 1px 7px;
+      cursor: pointer;
+    }
+    .note-attachments-list .att-chip button:hover { background: #c62828; }
     .subject-attachment-bar {
       background: #e9edfa;
       border-radius: 6px;
@@ -177,6 +207,7 @@
       .sidebar { width: 100%; flex-direction: row; padding: 8px;}
       .main { padding: 8px;}
       .subject-attachment-bar { flex-direction: column; align-items: flex-start;}
+      .note-attachments-list { flex-direction: column; gap: 4px; }
     }
   </style>
 </head>
@@ -201,12 +232,16 @@
         <input id="noteTitle" type="text" placeholder="筆記標題">
         <input id="noteTags" type="text" placeholder="標籤（可用逗號分隔）">
         <textarea id="noteContent" placeholder="內容"></textarea>
-        <div class="note-attachment" id="noteAttachment" style="display:none;">
+        <div class="note-attachments">
           <span>附件：</span>
-          <a href="#" id="attachmentLink" target="_blank"></a>
-          <button onclick="removeAttachment()" type="button" style="padding:2px 8px;background:#e57373;">移除</button>
+          <div class="note-attachments-list" id="noteAttachmentsList"></div>
         </div>
-        <select id="attachmentSelect" style="width:100%;margin-bottom:10px;display:none;"></select>
+        <div>
+          <select id="attachmentSelect" style="width:100%;margin-bottom:10px;">
+            <option value="">（選擇要新增的附件）</option>
+          </select>
+          <button type="button" onclick="addAttachmentToNote()">加入附件</button>
+        </div>
         <div class="actions">
           <button onclick="saveNote()">儲存</button>
           <button onclick="cancelEdit()">取消</button>
@@ -220,15 +255,11 @@
     let notes = JSON.parse(localStorage.getItem('notes')||'[]');
     let currentSubject = subjects[0];
     let editingNoteId = null;
-    let attachmentData = null; // { name, url }
+    let editingAttachments = []; // [{name, url}]
 
     // 儲存 token 到 localStorage
-    function getGithubToken() {
-      return localStorage.getItem('github_token') || '';
-    }
-    function setGithubToken(token) {
-      localStorage.setItem('github_token', token);
-    }
+    function getGithubToken() { return localStorage.getItem('github_token') || ''; }
+    function setGithubToken(token) { localStorage.setItem('github_token', token); }
 
     function saveData() {
       localStorage.setItem('subjects', JSON.stringify(subjects));
@@ -343,7 +374,7 @@
 
     function addNote() {
       editingNoteId = null;
-      showEditor({title:'',tags:[],content:'', attachment:null});
+      showEditor({title:'',tags:[],content:'', attachments:[]});
     }
 
     function editNote(id) {
@@ -357,10 +388,9 @@
       document.getElementById('noteTitle').value = note.title || '';
       document.getElementById('noteTags').value = note.tags ? note.tags.join(',') : '';
       document.getElementById('noteContent').value = note.content || '';
-      document.getElementById('noteFile')?.remove();
-      attachmentData = note.attachment || null;
-      renderAttachment();
-      loadAttachmentSelect(note.attachment);
+      editingAttachments = Array.isArray(note.attachments) ? [...note.attachments] : [];
+      renderNoteAttachmentsEdit();
+      loadAttachmentSelectForNote();
       window.scrollTo({top:0});
     }
 
@@ -375,7 +405,7 @@
         n.tags = tags;
         n.content = content;
         n.updated_at = now;
-        n.attachment = attachmentData;
+        n.attachments = [...editingAttachments];
       } else {
         notes.push({
           id: Math.random().toString(36).substr(2,9),
@@ -383,7 +413,7 @@
           title, tags, content,
           created_at: now,
           updated_at: now,
-          attachment: attachmentData
+          attachments: [...editingAttachments]
         });
       }
       saveData();
@@ -394,32 +424,33 @@
     function cancelEdit() {
       document.getElementById('noteEditor').style.display='none';
       editingNoteId = null;
-      attachmentData = null;
+      editingAttachments = [];
     }
 
-    // 修正版: 可直接預覽附件
-    function renderAttachment() {
-      const att = document.getElementById('noteAttachment');
-      const link = document.getElementById('attachmentLink');
-      if (attachmentData) {
-        att.style.display = '';
-        link.textContent = attachmentData.name;
-        link.href = "#";
-        link.onclick = function(e) {
-          e.preventDefault();
-          openInViewer(attachmentData.url);
-          return false;
-        };
-      } else {
-        att.style.display = 'none';
-        link.textContent = '';
-        link.href = '#';
-        link.onclick = null;
+    function renderNoteAttachmentsEdit() {
+      const cont = document.getElementById('noteAttachmentsList');
+      cont.innerHTML = '';
+      editingAttachments.forEach((att, idx) => {
+        const chip = document.createElement('span');
+        chip.className = 'att-chip';
+        chip.innerHTML = `<a href="#" onclick="openInViewer('${att.url}');return false;">${att.name}</a>
+          <button type="button" title="移除" onclick="removeAttachmentFromNote(${idx});event.stopPropagation();">x</button>`;
+        cont.appendChild(chip);
+      });
+    }
+    function addAttachmentToNote() {
+      const select = document.getElementById('attachmentSelect');
+      if (select.value) {
+        const att = JSON.parse(select.value);
+        if (!editingAttachments.some(a=>a.name===att.name)) {
+          editingAttachments.push(att);
+        }
+        renderNoteAttachmentsEdit();
       }
     }
-    function removeAttachment() {
-      attachmentData = null;
-      renderAttachment();
+    function removeAttachmentFromNote(idx) {
+      editingAttachments.splice(idx,1);
+      renderNoteAttachmentsEdit();
     }
 
     // ====== GitHub 附件管理 ======
@@ -427,7 +458,6 @@
     const repoName = "My-Notes";
     const mainAttachmentRoot = "attachments"; // 你的附件總資料夾
 
-    // Base64 encode (binary-safe)
     function base64ArrayBuffer(arrayBuffer) {
       let base64 = '';
       const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -475,7 +505,7 @@
 
     function uploadSubjectAttachment() {
       const token = document.getElementById('subjectToken').value.trim();
-      setGithubToken(token); // 記錄 token
+      setGithubToken(token);
       const fileInput = document.getElementById('subjectFile');
       const file = fileInput.files[0];
       const msgSpan = document.getElementById('subjectUploadMsg');
@@ -521,7 +551,7 @@
             if (res.content && res.content.download_url) {
               msgSpan.innerHTML = `✅ 上傳成功：<a href="#" onclick="openInViewer('${res.content.download_url}');return false;">${file.name}</a>`;
               renderSubjectAttachmentsList();
-              loadAttachmentSelect();
+              loadAttachmentSelectForNote();
             } else if (res && res.message) {
               msgSpan.innerText = "❌ " + res.message;
             } else {
@@ -593,13 +623,37 @@
           .then(res => {
             if (res && (res.commit || res.content === null)) {
               renderSubjectAttachmentsList();
-              loadAttachmentSelect();
+              loadAttachmentSelectForNote();
             } else if (res && res.message) {
               alert("刪除失敗：" + res.message);
             } else {
               alert("刪除失敗。");
             }
           });
+        });
+    }
+
+    // 附件選擇：編輯筆記時用，支援多附件
+    function loadAttachmentSelectForNote() {
+      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
+        .then(res => res.json())
+        .then(files => {
+          const select = document.getElementById('attachmentSelect');
+          select.innerHTML = '<option value="">（選擇要新增的附件）</option>';
+          if (Array.isArray(files)) {
+            files.forEach(file => {
+              if (file.type === "file") {
+                let opt = document.createElement('option');
+                opt.value = JSON.stringify({name:file.name, url:file.download_url});
+                opt.textContent = file.name + ` (${(file.size/1024).toFixed(1)} KB)`;
+                select.appendChild(opt);
+              }
+            });
+          }
+        })
+        .catch(err => {
+          const select = document.getElementById('attachmentSelect');
+          select.innerHTML = '<option value="">（無法載入附件）</option>';
         });
     }
 
@@ -620,48 +674,8 @@
       }
     }
 
-    function loadAttachmentSelect(selectedAttachment) {
-      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
-        .then(res => res.json())
-        .then(files => {
-          const select = document.getElementById('attachmentSelect');
-          select.innerHTML = '<option value="">（不附加）</option>';
-          let found = false;
-          if (Array.isArray(files)) {
-            files.forEach(file => {
-              if (file.type === "file") {
-                let opt = document.createElement('option');
-                opt.value = JSON.stringify({name:file.name, url:file.download_url});
-                opt.textContent = file.name + ` (${(file.size/1024).toFixed(1)} KB)`;
-                if (selectedAttachment && selectedAttachment.name === file.name) {
-                  opt.selected = true;
-                  found = true;
-                }
-                select.appendChild(opt);
-              }
-            });
-          }
-          select.style.display = '';
-          select.onchange = function() {
-            if (select.value) {
-              attachmentData = JSON.parse(select.value);
-            } else {
-              attachmentData = null;
-            }
-            renderAttachment();
-          };
-          if (!found && selectedAttachment && selectedAttachment.name) {
-            attachmentData = null;
-            renderAttachment();
-          }
-        })
-        .catch(err => {
-          const select = document.getElementById('attachmentSelect');
-          select.innerHTML = '<option value="">（無法載入附件）</option>';
-          select.style.display = '';
-        });
-    }
-
+    // 顯示筆記時預覽多附件
+    // (你可根據需要在列表加上預覽)
     // 初始化
     renderSubjects();
     renderNotesList();
