@@ -397,17 +397,24 @@
       attachmentData = null;
     }
 
+    // 修正版: 可直接預覽附件
     function renderAttachment() {
       const att = document.getElementById('noteAttachment');
       const link = document.getElementById('attachmentLink');
       if (attachmentData) {
         att.style.display = '';
         link.textContent = attachmentData.name;
-        link.href = attachmentData.url;
+        link.href = "#";
+        link.onclick = function(e) {
+          e.preventDefault();
+          openInViewer(attachmentData.url);
+          return false;
+        };
       } else {
         att.style.display = 'none';
         link.textContent = '';
         link.href = '#';
+        link.onclick = null;
       }
     }
     function removeAttachment() {
@@ -444,13 +451,11 @@
       return base64;
     }
 
-    // Render 上傳、附件列表 UI
     function renderSubjectAttachmentUI() {
       renderSubjectAttachmentBar();
       renderSubjectAttachmentsList();
     }
 
-    // 上傳區UI
     function renderSubjectAttachmentBar() {
       const bar = document.getElementById('subjectAttachmentBar');
       const savedToken = getGithubToken();
@@ -463,7 +468,6 @@
         <span class="warn">（Token 僅供私人用途）</span>
         <span id="subjectUploadMsg" class="msg"></span>
       `;
-      // 當 token 輸入時自動記錄
       document.getElementById('subjectToken').addEventListener('change', function() {
         setGithubToken(this.value.trim());
       });
@@ -481,7 +485,6 @@
 
       const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(file.name)}`;
 
-      // 先確認檔案是否存在，決定是否要帶 sha（更新）
       fetch(apiUrl, {
         method: 'GET',
         headers: {
@@ -490,10 +493,9 @@
         }
       }).then(res => {
         if (res.status === 200) {
-          // 檔案已存在，需帶 sha
           return res.json();
         } else {
-          return null; // 不存在
+          return null;
         }
       }).then(existingFile => {
         const reader = new FileReader();
@@ -533,7 +535,6 @@
       });
     }
 
-    // 渲染附件清單區
     function renderSubjectAttachmentsList() {
       const ulDiv = document.getElementById('subjectAttachmentsList');
       ulDiv.innerHTML = `<div style="margin-bottom: 8px;"><b>${currentSubject} 附件列表</b></div><ul id="subjectAttachmentsUl"></ul>`;
@@ -560,13 +561,10 @@
         });
     }
 
-    // 刪除附件（debug修正版）
     function deleteSubjectAttachment(fileName) {
       const token = getGithubToken();
       if (!token) { alert("請輸入 GitHub Token"); return; }
       if (!confirm(`確定要刪除 ${fileName} 嗎？`)) return;
-      const path = `${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`;
-      // 1. 先查 sha（需用未編碼的 currentSubject/fileName 給 API）
       const shaApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`;
       fetch(shaApiUrl, {
         headers: {
@@ -622,7 +620,6 @@
       }
     }
 
-    // 編輯/新增筆記時的下拉選單選附件
     function loadAttachmentSelect(selectedAttachment) {
       fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
         .then(res => res.json())
