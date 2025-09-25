@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Notes 資料庫 with Google Drive</title>
+  <title>Notes 資料庫 with 科目附件管理</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { margin: 0; font-family: Arial, 'Microsoft JhengHei', sans-serif; background: #f4f6fa; }
@@ -123,32 +123,75 @@
       align-items: center;
       gap: 8px;
     }
-    .note-attachment a { color: #42507a; text-decoration: underline; }
-    .google-login { margin-bottom: 12px; }
-    .user-info { font-size: 13px; color: #888; margin-bottom: 6px; }
+    .subject-attachment-bar {
+      background: #e9edfa;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      font-size: 15px;
+    }
+    .subject-attachment-bar input[type="password"], 
+    .subject-attachment-bar input[type="file"] {
+      font-size: 15px;
+      border: 1px solid #bcc6e2;
+      border-radius: 3px;
+      padding: 4px 8px;
+      margin-right: 8px;
+    }
+    .subject-attachment-bar label { font-weight: bold; color: #42507a; margin-right: 4px;}
+    .subject-attachment-bar button { padding: 4px 16px;}
+    .subject-attachment-bar .warn { color: #b20000; font-size: 13px;}
+    .subject-attachment-bar .msg { font-size: 14px; margin-left: 8px;}
+    .subject-attachments-list ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .subject-attachments-list li {
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .subject-attachments-list a {
+      color: #42507a;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .subject-attachments-list button {
+      background: #e57373;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      font-size: 12px;
+      padding: 2px 7px;
+      cursor: pointer;
+    }
+    .subject-attachments-list button:hover { background: #c62828; }
     @media (max-width: 800px) {
       .container { flex-direction: column; }
       .sidebar { width: 100%; flex-direction: row; padding: 8px;}
       .main { padding: 8px;}
+      .subject-attachment-bar { flex-direction: column; align-items: flex-start;}
     }
   </style>
-  <!-- Google API 加載時自動呼叫 handleClientLoad -->
-  <script src="https://apis.google.com/js/api.js?onload=handleClientLoad" async defer></script>
 </head>
 <body>
   <div class="container">
     <!-- Sidebar: 科目列表 -->
     <div class="sidebar">
       <h2>科目</h2>
-      <div class="google-login" id="googleLogin">
-        <button onclick="handleAuthClick()">Google 登入</button>
-      </div>
-      <div class="user-info" id="userInfo" style="display:none;"></div>
       <div class="subjects" id="subjectList"></div>
       <button class="add-subject" onclick="addSubject()">＋ 新增科目</button>
     </div>
-    <!-- Main: 筆記列表 + 筆記內容 -->
+    <!-- Main: 筆記列表 + 科目附件管理 -->
     <div class="main">
+      <div id="subjectAttachmentBar" class="subject-attachment-bar"></div>
+      <div class="subject-attachments-list" id="subjectAttachmentsList"></div>
       <div class="topbar">
         <input class="search" id="searchInput" type="text" placeholder="搜尋筆記/標籤..." oninput="renderNotesList()">
         <button class="add-note" onclick="addNote()">＋ 新增筆記</button>
@@ -159,11 +202,11 @@
         <input id="noteTags" type="text" placeholder="標籤（可用逗號分隔）">
         <textarea id="noteContent" placeholder="內容"></textarea>
         <div class="note-attachment" id="noteAttachment" style="display:none;">
-          <span>已上傳檔案：</span>
+          <span>附件：</span>
           <a href="#" id="attachmentLink" target="_blank"></a>
           <button onclick="removeAttachment()" type="button" style="padding:2px 8px;background:#e57373;">移除</button>
         </div>
-        <input type="file" id="noteFile" onchange="handleFileUpload(event)">
+        <select id="attachmentSelect" style="width:100%;margin-bottom:10px;display:none;"></select>
         <div class="actions">
           <button onclick="saveNote()">儲存</button>
           <button onclick="cancelEdit()">取消</button>
@@ -172,62 +215,20 @@
     </div>
   </div>
   <script>
-    // Google OAuth 2.0 & Drive API
-    const CLIENT_ID = '399352736835-lpb9ka9i5p4oed1id7j6q2b688k259ve.apps.googleusercontent.com';
-    const API_KEY = '';
-    const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
-    const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-
-    let GoogleAuth = null;
-    let currentUser = null;
-
-    function updateSigninStatus(isSignedIn) {
-      if (isSignedIn) {
-        document.getElementById('googleLogin').style.display = 'none';
-        let profile = GoogleAuth.currentUser.get().getBasicProfile();
-        currentUser = profile;
-        document.getElementById('userInfo').style.display = '';
-        document.getElementById('userInfo').innerText = `已登入：${profile.getEmail()}`;
-      } else {
-        document.getElementById('googleLogin').style.display = '';
-        document.getElementById('userInfo').style.display = 'none';
-        currentUser = null;
-      }
-    }
-
-    function handleClientLoad() {
-      gapi.load('client:auth2', initClient);
-    }
-
-    function initClient() {
-      gapi.client.init({
-        apiKey: API_KEY,
-        clientId: CLIENT_ID,
-        discoveryDocs: DISCOVERY_DOCS,
-        scope: SCOPES
-      }).then(function () {
-        GoogleAuth = gapi.auth2.getAuthInstance();
-        updateSigninStatus(GoogleAuth.isSignedIn.get());
-        GoogleAuth.isSignedIn.listen(updateSigninStatus);
-      }, function(error) {
-        alert('Google API 初始化失敗！');
-      });
-    }
-
-    function handleAuthClick() {
-      if (!GoogleAuth) {
-        alert('Google API 尚未初始化，請稍後再試。');
-        return;
-      }
-      GoogleAuth.signIn();
-    }
-
-    // 本地資料
+    // ====== 筆記本本地儲存 ======
     let subjects = JSON.parse(localStorage.getItem('subjects')||'["數學","英文","電腦"]');
     let notes = JSON.parse(localStorage.getItem('notes')||'[]');
     let currentSubject = subjects[0];
     let editingNoteId = null;
     let attachmentData = null; // { name, url }
+
+    // 儲存 token 到 localStorage
+    function getGithubToken() {
+      return localStorage.getItem('github_token') || '';
+    }
+    function setGithubToken(token) {
+      localStorage.setItem('github_token', token);
+    }
 
     function saveData() {
       localStorage.setItem('subjects', JSON.stringify(subjects));
@@ -245,7 +246,7 @@
         div.className = 'subject' + (subj === currentSubject ? ' active' : '');
         div.innerText = subj;
         div.title = subj;
-        div.onclick = () => { currentSubject = subj; renderSubjects(); renderNotesList(); cancelEdit(); }
+        div.onclick = () => { currentSubject = subj; renderSubjects(); renderNotesList(); renderSubjectAttachmentUI(); cancelEdit(); }
         row.appendChild(div);
 
         const actions = document.createElement('div');
@@ -265,6 +266,7 @@
             saveData();
             renderSubjects();
             renderNotesList();
+            renderSubjectAttachmentUI();
             cancelEdit();
           } else if (subjects.includes(newName)) {
             alert("科目名稱已存在！");
@@ -285,6 +287,7 @@
             saveData();
             renderSubjects();
             renderNotesList();
+            renderSubjectAttachmentUI();
             cancelEdit();
           }
         };
@@ -303,6 +306,7 @@
         currentSubject = name;
         renderSubjects();
         renderNotesList();
+        renderSubjectAttachmentUI();
         cancelEdit();
       } else if (subjects.includes(name)) {
         alert("科目名稱已存在！");
@@ -353,9 +357,10 @@
       document.getElementById('noteTitle').value = note.title || '';
       document.getElementById('noteTags').value = note.tags ? note.tags.join(',') : '';
       document.getElementById('noteContent').value = note.content || '';
-      document.getElementById('noteFile').value = '';
+      document.getElementById('noteFile')?.remove();
       attachmentData = note.attachment || null;
       renderAttachment();
+      loadAttachmentSelect(note.attachment);
       window.scrollTo({top:0});
     }
 
@@ -392,73 +397,6 @@
       attachmentData = null;
     }
 
-    // Google Drive 上傳檔案
-    function handleFileUpload(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (!GoogleAuth || !GoogleAuth.isSignedIn.get()) {
-        alert("請先登入 Google 帳戶！");
-        e.target.value = '';
-        return;
-      }
-      if (file.size > 10*1024*1024) {
-        alert('檔案請小於 10MB');
-        e.target.value = '';
-        return;
-      }
-      // 上傳到 Google Drive
-      uploadFileToDrive(file, function(link, fileName){
-        attachmentData = {
-          name: fileName,
-          url: link
-        };
-        renderAttachment();
-        alert("上傳成功！檔案連結已自動加入附件。");
-      });
-    }
-
-    function uploadFileToDrive(file, callback) {
-      var metadata = {
-        'name': file.name,
-        'mimeType': file.type
-      };
-      var accessToken = gapi.auth.getToken().access_token;
-      var form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      form.append('file', file);
-
-      fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
-        body: form,
-      }).then(res => res.json())
-        .then(function(val) {
-          if (!val.id) {
-            alert('上傳失敗！');
-            return;
-          }
-          // 設定成公開 anyone 可讀
-          setFilePublic(val.id, function(){
-            const link = 'https://drive.google.com/file/d/' + val.id + '/view?usp=sharing';
-            callback(link, file.name);
-          });
-        });
-    }
-
-    function setFilePublic(fileId, callback) {
-      var accessToken = gapi.auth.getToken().access_token;
-      fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + accessToken,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ role: 'reader', type: 'anyone' })
-      }).then(() => {
-        callback();
-      });
-    }
-
     function renderAttachment() {
       const att = document.getElementById('noteAttachment');
       const link = document.getElementById('attachmentLink');
@@ -472,17 +410,239 @@
         link.href = '#';
       }
     }
-
     function removeAttachment() {
       attachmentData = null;
-      document.getElementById('noteFile').value = '';
       renderAttachment();
+    }
+
+    // ====== GitHub 附件管理 ======
+    const repoOwner = "lhwongn-bot";
+    const repoName = "My-Notes";
+    const mainAttachmentRoot = "attachments"; // 你的附件總資料夾
+
+    // Base64 encode (binary-safe)
+    function base64ArrayBuffer(arrayBuffer) {
+      let base64 = '';
+      const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      const bytes = new Uint8Array(arrayBuffer);
+      let i;
+      const byteLength = bytes.byteLength;
+      for (i = 0; i < byteLength; i += 3) {
+        base64 += encodings[bytes[i] >> 2];
+        base64 += encodings[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
+        if (i + 1 < byteLength) {
+          base64 += encodings[((bytes[i + 1] & 15) << 2) | (bytes[i + 2] >> 6)];
+        } else {
+          base64 += '=';
+        }
+        if (i + 2 < byteLength) {
+          base64 += encodings[bytes[i + 2] & 63];
+        } else {
+          base64 += '=';
+        }
+      }
+      return base64;
+    }
+
+    // Render 上傳、附件列表 UI
+    function renderSubjectAttachmentUI() {
+      renderSubjectAttachmentBar();
+      renderSubjectAttachmentsList();
+    }
+
+    // 上傳區UI
+    function renderSubjectAttachmentBar() {
+      const bar = document.getElementById('subjectAttachmentBar');
+      const savedToken = getGithubToken();
+      bar.innerHTML = `
+        <label for="subjectToken">GitHub Token:</label>
+        <input id="subjectToken" type="password" placeholder="請貼上你的 GitHub Token" value="${savedToken.replace(/"/g, '&quot;')}" />
+        <label for="subjectFile">上傳 ${currentSubject} 附件:</label>
+        <input type="file" id="subjectFile" />
+        <button onclick="uploadSubjectAttachment()">上傳</button>
+        <span class="warn">（Token 僅供私人用途）</span>
+        <span id="subjectUploadMsg" class="msg"></span>
+      `;
+      // 當 token 輸入時自動記錄
+      document.getElementById('subjectToken').addEventListener('change', function() {
+        setGithubToken(this.value.trim());
+      });
+    }
+
+    function uploadSubjectAttachment() {
+      const token = document.getElementById('subjectToken').value.trim();
+      setGithubToken(token); // 記錄 token
+      const fileInput = document.getElementById('subjectFile');
+      const file = fileInput.files[0];
+      const msgSpan = document.getElementById('subjectUploadMsg');
+      if (!token) { alert("請輸入 GitHub Token"); return; }
+      if (!file) { alert("請選擇檔案"); return; }
+      msgSpan.innerText = "上傳中...";
+
+      const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(file.name)}`;
+
+      const reader = new FileReader();
+      reader.onload = function() {
+        const base64Content = base64ArrayBuffer(reader.result);
+        fetch(apiUrl, {
+          method: 'PUT',
+          headers: {
+            "Authorization": "token " + token,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            message: `Add attachment for [${currentSubject}]: ${file.name}`,
+            content: base64Content
+          })
+        })
+        .then(res => res.json())
+        .then(res => {
+          if (res.content && res.content.download_url) {
+            msgSpan.innerHTML = `✅ 上傳成功：<a href="#" onclick="openInViewer('${res.content.download_url}');return false;">${file.name}</a>`;
+            renderSubjectAttachmentsList();
+            loadAttachmentSelect();
+          } else if (res && res.message) {
+            msgSpan.innerText = "❌ " + res.message;
+          } else {
+            msgSpan.innerText = "❌ 上傳失敗";
+          }
+        }).catch(() => {
+          msgSpan.innerText = "❌ 上傳失敗";
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // 渲染附件清單區
+    function renderSubjectAttachmentsList() {
+      const ulDiv = document.getElementById('subjectAttachmentsList');
+      ulDiv.innerHTML = `<div style="margin-bottom: 8px;"><b>${currentSubject} 附件列表</b></div><ul id="subjectAttachmentsUl"></ul>`;
+      const ul = document.getElementById('subjectAttachmentsUl');
+      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
+        .then(res => res.json())
+        .then(files => {
+          ul.innerHTML = '';
+          if (Array.isArray(files)) {
+            files.forEach(file => {
+              if (file.type === "file") {
+                const li = document.createElement('li');
+                li.innerHTML = `<a href="#" onclick="openInViewer('${file.download_url}');return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)
+                  <button onclick="deleteSubjectAttachment('${file.name}')">刪除</button>`;
+                ul.appendChild(li);
+              }
+            });
+          } else {
+            ul.innerHTML = "<li>暫無附件</li>";
+          }
+        })
+        .catch(() => {
+          ul.innerHTML = "<li>暫無附件</li>";
+        });
+    }
+
+    // 刪除附件
+    function deleteSubjectAttachment(fileName) {
+      const token = getGithubToken();
+      if (!token) { alert("請輸入 GitHub Token"); return; }
+      if (!confirm(`確定要刪除 ${fileName} 嗎？`)) return;
+      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`)
+        .then(res => res.json())
+        .then(file => {
+          if (!file.sha) {
+            alert("找不到檔案 sha，無法刪除。");
+            return;
+          }
+          fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}/${encodeURIComponent(fileName)}`, {
+            method: 'DELETE',
+            headers: {
+              "Authorization": "token " + token,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              message: `delete attachment: ${fileName}`,
+              sha: file.sha
+            })
+          })
+          .then(res => res.json())
+          .then(res => {
+            if (res && (res.commit || res.content === null)) {
+              renderSubjectAttachmentsList();
+              loadAttachmentSelect();
+            } else if (res && res.message) {
+              alert("刪除失敗：" + res.message);
+            } else {
+              alert("刪除失敗。");
+            }
+          });
+        });
+    }
+
+    // 打開文件時用 viewer 頁籤 (pdf, 圖片, 文字、office…)
+    function openInViewer(downloadUrl) {
+      // 支持 pdf/jpg/png/txt/doc/docx/xls/xlsx/ppt/pptx
+      // 對於 office 可用 Google Docs Viewer，pdf 直接新分頁，圖片直接顯示
+      const lower = downloadUrl.toLowerCase();
+      if (lower.endsWith('.pdf')) {
+        window.open(downloadUrl, '_blank');
+      } else if (lower.match(/\.(jpg|jpeg|png|gif|bmp)$/)) {
+        window.open(downloadUrl, '_blank');
+      } else if (lower.match(/\.(txt|csv|md|log)$/)) {
+        window.open(downloadUrl, '_blank');
+      } else if (lower.match(/\.(doc|docx|ppt|pptx|xls|xlsx)$/)) {
+        const viewer = "https://docs.google.com/viewer?url=" + encodeURIComponent(downloadUrl) + "&embedded=true";
+        window.open(viewer, '_blank');
+      } else {
+        window.open(downloadUrl, '_blank');
+      }
+    }
+
+    // 編輯/新增筆記時的下拉選單選附件
+    function loadAttachmentSelect(selectedAttachment) {
+      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
+        .then(res => res.json())
+        .then(files => {
+          const select = document.getElementById('attachmentSelect');
+          select.innerHTML = '<option value="">（不附加）</option>';
+          let found = false;
+          if (Array.isArray(files)) {
+            files.forEach(file => {
+              if (file.type === "file") {
+                let opt = document.createElement('option');
+                opt.value = JSON.stringify({name:file.name, url:file.download_url});
+                opt.textContent = file.name + ` (${(file.size/1024).toFixed(1)} KB)`;
+                if (selectedAttachment && selectedAttachment.name === file.name) {
+                  opt.selected = true;
+                  found = true;
+                }
+                select.appendChild(opt);
+              }
+            });
+          }
+          select.style.display = '';
+          select.onchange = function() {
+            if (select.value) {
+              attachmentData = JSON.parse(select.value);
+            } else {
+              attachmentData = null;
+            }
+            renderAttachment();
+          };
+          if (!found && selectedAttachment && selectedAttachment.name) {
+            attachmentData = null;
+            renderAttachment();
+          }
+        })
+        .catch(err => {
+          const select = document.getElementById('attachmentSelect');
+          select.innerHTML = '<option value="">（無法載入附件）</option>';
+          select.style.display = '';
+        });
     }
 
     // 初始化
     renderSubjects();
     renderNotesList();
-    // 不再需要 window.onload，gapi 會自動 call handleClientLoad
+    renderSubjectAttachmentUI();
   </script>
 </body>
 </html>
