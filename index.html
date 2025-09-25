@@ -51,6 +51,7 @@
       display: flex;
       flex-direction: column;
       padding: 24px;
+      min-width: 0;
     }
     .topbar {
       display: flex;
@@ -67,14 +68,24 @@
       font-size: 16px;
     }
     .add-note { background: #42507a; color: #fff; border: none; border-radius: 5px; padding: 9px 20px; cursor: pointer;}
-    .notes-list {
+    .content-area {
+      display: flex;
       flex: 1;
-      overflow-y: auto;
+      min-width: 0;
+      min-height: 0;
+      gap: 16px;
+    }
+    .notes-list {
+      width: 320px;
+      min-width: 220px;
+      max-width: 400px;
       background: #fff;
       border-radius: 8px;
       padding: 16px;
-      margin-bottom: 18px;
       box-shadow: 0 1px 6px rgba(41,52,77,0.08);
+      overflow-y: auto;
+      margin-bottom: 0;
+      flex-shrink: 0;
     }
     .note-item {
       padding: 9px 10px;
@@ -84,17 +95,60 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      background: #fff;
     }
     .note-item:last-child { border-bottom: none; }
     .note-item.active, .note-item:hover { background: #f1f3fa; }
     .note-title { font-weight: 500; }
     .note-tags { font-size: 12px; color: #666; }
     .note-date { font-size: 12px; color: #999; }
+    .note-viewer {
+      flex: 1;
+      background: #fff;
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 1px 6px rgba(41,52,77,0.08);
+      overflow-y: auto;
+      min-width: 0;
+    }
+    .viewer-title { font-size: 22px; font-weight: bold; margin-bottom: 8px; color: #29344d;}
+    .viewer-tags { font-size: 13px; color: #6076b1; margin-bottom: 4px;}
+    .viewer-date { font-size: 12px; color: #999; margin-bottom: 8px;}
+    .viewer-content { white-space: pre-wrap; line-height: 1.7; margin-bottom: 18px;}
+    .viewer-attachments {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #42507a;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .viewer-attachments-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .viewer-attachments-list .att-chip {
+      background: #e9edfa;
+      padding: 4px 12px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .viewer-attachments-list .att-chip a {
+      color: #42507a;
+      text-decoration: underline;
+    }
     .note-editor {
       background: #fff;
       border-radius: 8px;
       padding: 18px;
       box-shadow: 0 1px 6px rgba(41,52,77,0.08);
+      margin-bottom: 18px;
+      max-width: 700px;
+      min-width: 0;
     }
     .note-editor input, .note-editor textarea {
       width: 100%;
@@ -202,12 +256,20 @@
       cursor: pointer;
     }
     .subject-attachments-list button:hover { background: #c62828; }
+    @media (max-width: 1100px) {
+      .content-area { flex-direction: column; }
+      .notes-list { width: 100%; max-width: 100%; }
+      .note-viewer { width: 100%; margin-top: 16px; }
+    }
     @media (max-width: 800px) {
       .container { flex-direction: column; }
       .sidebar { width: 100%; flex-direction: row; padding: 8px;}
       .main { padding: 8px;}
       .subject-attachment-bar { flex-direction: column; align-items: flex-start;}
-      .note-attachments-list { flex-direction: column; gap: 4px; }
+      .note-attachments-list, .viewer-attachments-list { flex-direction: column; gap: 4px; }
+      .content-area { flex-direction: column; }
+      .notes-list { width: 100%; max-width: 100%; }
+      .note-viewer { width: 100%; margin-top: 16px; }
     }
   </style>
 </head>
@@ -224,27 +286,32 @@
       <div id="subjectAttachmentBar" class="subject-attachment-bar"></div>
       <div class="subject-attachments-list" id="subjectAttachmentsList"></div>
       <div class="topbar">
-        <input class="search" id="searchInput" type="text" placeholder="搜尋筆記/標籤..." oninput="renderNotesList()">
+        <input class="search" id="searchInput" type="text" placeholder="搜尋筆記/標籤..." oninput="renderNotesList();">
         <button class="add-note" onclick="addNote()">＋ 新增筆記</button>
       </div>
-      <div class="notes-list" id="notesList"></div>
-      <div class="note-editor" id="noteEditor" style="display:none;">
-        <input id="noteTitle" type="text" placeholder="筆記標題">
-        <input id="noteTags" type="text" placeholder="標籤（可用逗號分隔）">
-        <textarea id="noteContent" placeholder="內容"></textarea>
-        <div class="note-attachments">
-          <span>附件：</span>
-          <div class="note-attachments-list" id="noteAttachmentsList"></div>
-        </div>
-        <div>
-          <select id="attachmentSelect" style="width:100%;margin-bottom:10px;">
-            <option value="">（選擇要新增的附件）</option>
-          </select>
-          <button type="button" onclick="addAttachmentToNote()">加入附件</button>
-        </div>
-        <div class="actions">
-          <button onclick="saveNote()">儲存</button>
-          <button onclick="cancelEdit()">取消</button>
+      <div class="content-area">
+        <div class="notes-list" id="notesList"></div>
+        <div style="flex:1; min-width:0;">
+          <div class="note-viewer" id="noteViewer" style="display:none;"></div>
+          <div class="note-editor" id="noteEditor" style="display:none;">
+            <input id="noteTitle" type="text" placeholder="筆記標題">
+            <input id="noteTags" type="text" placeholder="標籤（可用逗號分隔）">
+            <textarea id="noteContent" placeholder="內容"></textarea>
+            <div class="note-attachments">
+              <span>附件：</span>
+              <div class="note-attachments-list" id="noteAttachmentsList"></div>
+            </div>
+            <div>
+              <select id="attachmentSelect" style="width:100%;margin-bottom:10px;">
+                <option value="">（選擇要新增的附件）</option>
+              </select>
+              <button type="button" onclick="addAttachmentToNote()">加入附件</button>
+            </div>
+            <div class="actions">
+              <button onclick="saveNote()">儲存</button>
+              <button onclick="cancelEdit()">取消</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -256,6 +323,7 @@
     let currentSubject = subjects[0];
     let editingNoteId = null;
     let editingAttachments = []; // [{name, url}]
+    let viewingNote = null;
 
     // 儲存 token 到 localStorage
     function getGithubToken() { return localStorage.getItem('github_token') || ''; }
@@ -277,13 +345,19 @@
         div.className = 'subject' + (subj === currentSubject ? ' active' : '');
         div.innerText = subj;
         div.title = subj;
-        div.onclick = () => { currentSubject = subj; renderSubjects(); renderNotesList(); renderSubjectAttachmentUI(); cancelEdit(); }
+        div.onclick = () => {
+          currentSubject = subj;
+          renderSubjects();
+          renderNotesList();
+          renderSubjectAttachmentUI();
+          cancelEdit();
+          renderNoteViewer(null);
+        };
         row.appendChild(div);
 
         const actions = document.createElement('div');
         actions.className = 'subject-actions';
 
-        // 修改
         const editBtn = document.createElement('button');
         editBtn.innerHTML = '✎';
         editBtn.title = '修改名稱';
@@ -299,13 +373,13 @@
             renderNotesList();
             renderSubjectAttachmentUI();
             cancelEdit();
+            renderNoteViewer(null);
           } else if (subjects.includes(newName)) {
             alert("科目名稱已存在！");
           }
         };
         actions.appendChild(editBtn);
 
-        // 刪除
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '🗑';
         delBtn.title = '刪除科目';
@@ -320,6 +394,7 @@
             renderNotesList();
             renderSubjectAttachmentUI();
             cancelEdit();
+            renderNoteViewer(null);
           }
         };
         actions.appendChild(delBtn);
@@ -329,22 +404,7 @@
       });
     }
 
-    function addSubject() {
-      const name = prompt("請輸入新科目名稱：");
-      if (name && !subjects.includes(name)) {
-        subjects.push(name);
-        saveData();
-        currentSubject = name;
-        renderSubjects();
-        renderNotesList();
-        renderSubjectAttachmentUI();
-        cancelEdit();
-      } else if (subjects.includes(name)) {
-        alert("科目名稱已存在！");
-      }
-    }
-
-    function renderNotesList() {
+    function renderNotesList(selectedId) {
       const kw = document.getElementById('searchInput').value.trim().toLowerCase();
       const list = document.getElementById('notesList');
       let filtered = notes.filter(n => n.subject === currentSubject);
@@ -355,11 +415,14 @@
           (n.content && n.content.toLowerCase().includes(kw))
         );
       }
+      // 至少顯示4項，若不足則補空白項
+      const minItems = 4;
+      const noteCount = filtered.length;
       list.innerHTML = '';
       filtered.forEach(n => {
         const div = document.createElement('div');
-        div.className = 'note-item' + (editingNoteId===n.id ? ' active':'');
-        div.onclick = () => editNote(n.id);
+        div.className = 'note-item' + ((viewingNote && viewingNote.id===n.id) ? ' active':'');
+        div.onclick = () => { renderNoteViewer(n); cancelEdit(); };
         div.innerHTML = `<div>
             <div class="note-title">${n.title||'(無標題)'}</div>
             <div class="note-tags">${n.tags ? n.tags.join(', ') : ''}</div>
@@ -369,22 +432,32 @@
           </div>`;
         list.appendChild(div);
       });
-      if (filtered.length===0) list.innerHTML = '<div style="color:#999;">暫無筆記</div>';
+      for(let i=noteCount;i<minItems;i++){
+        const div = document.createElement('div');
+        div.className = 'note-item';
+        div.style.visibility = 'hidden';
+        div.innerHTML = '<div><div class="note-title">&nbsp;</div></div><div></div>';
+        list.appendChild(div);
+      }
+      if (filtered.length===0) list.innerHTML += '<div style="color:#999;">暫無筆記</div>';
     }
 
     function addNote() {
       editingNoteId = null;
       showEditor({title:'',tags:[],content:'', attachments:[]});
+      renderNoteViewer(null);
     }
 
     function editNote(id) {
       editingNoteId = id;
       const note = notes.find(n=>n.id===id);
       showEditor(note);
+      renderNoteViewer(null);
     }
 
     function showEditor(note) {
       document.getElementById('noteEditor').style.display='block';
+      document.getElementById('noteViewer').style.display='none';
       document.getElementById('noteTitle').value = note.title || '';
       document.getElementById('noteTags').value = note.tags ? note.tags.join(',') : '';
       document.getElementById('noteContent').value = note.content || '';
@@ -407,14 +480,16 @@
         n.updated_at = now;
         n.attachments = [...editingAttachments];
       } else {
-        notes.push({
+        const newNote = {
           id: Math.random().toString(36).substr(2,9),
           subject: currentSubject,
           title, tags, content,
           created_at: now,
           updated_at: now,
           attachments: [...editingAttachments]
-        });
+        };
+        notes.push(newNote);
+        renderNoteViewer(newNote);
       }
       saveData();
       cancelEdit();
@@ -427,6 +502,7 @@
       editingAttachments = [];
     }
 
+    // 編輯筆記時的附件 chip
     function renderNoteAttachmentsEdit() {
       const cont = document.getElementById('noteAttachmentsList');
       cont.innerHTML = '';
@@ -453,10 +529,54 @@
       renderNoteAttachmentsEdit();
     }
 
+    // 筆記預覽（多附件）
+    function renderNoteViewer(note) {
+      const viewer = document.getElementById('noteViewer');
+      if (!note) {
+        viewer.style.display = 'none';
+        viewingNote = null;
+        renderNotesList();
+        return;
+      }
+      viewingNote = note;
+      viewer.style.display = '';
+      document.getElementById('noteEditor').style.display = 'none';
+      viewer.innerHTML = `
+        <div class="viewer-title">${note.title||'(無標題)'}</div>
+        <div class="viewer-tags">${note.tags && note.tags.length ? '標籤：' + note.tags.join(', ') : ''}</div>
+        <div class="viewer-date">${note.updated_at ? '最後更新：'+note.updated_at.substr(0,10) : ''}</div>
+        <div class="viewer-content">${note.content ? escapeHtml(note.content) : ''}</div>
+        <div class="viewer-attachments">
+          <span>附件：</span>
+          <div class="viewer-attachments-list">
+            ${(Array.isArray(note.attachments) && note.attachments.length)
+              ? note.attachments.map(att=>`
+              <span class="att-chip">
+                <a href="#" onclick="openInViewer('${att.url}');return false;">${att.name}</a>
+              </span>
+              `).join('')
+              : '<span style="color:#999;">無</span>'}
+          </div>
+        </div>
+        <div style="text-align:right; margin-top:16px;">
+          <button onclick="editNote('${note.id}')">編輯</button>
+        </div>
+      `;
+      renderNotesList(note.id);
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/[&<>"']/g, function(m) {
+        return ({
+          '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        })[m];
+      });
+    }
+
     // ====== GitHub 附件管理 ======
     const repoOwner = "lhwongn-bot";
     const repoName = "My-Notes";
-    const mainAttachmentRoot = "attachments"; // 你的附件總資料夾
+    const mainAttachmentRoot = "attachments";
 
     function base64ArrayBuffer(arrayBuffer) {
       let base64 = '';
@@ -674,8 +794,6 @@
       }
     }
 
-    // 顯示筆記時預覽多附件
-    // (你可根據需要在列表加上預覽)
     // 初始化
     renderSubjects();
     renderNotesList();
