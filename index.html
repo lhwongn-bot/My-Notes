@@ -234,6 +234,8 @@
       list-style: none;
       margin: 0;
       padding: 0;
+      max-height: 120px;
+      overflow-y: auto;
     }
     .subject-attachments-list li {
       margin-bottom: 6px;
@@ -256,6 +258,27 @@
       cursor: pointer;
     }
     .subject-attachments-list button:hover { background: #c62828; }
+    .attachments-pager {
+      display: flex;
+      gap: 5px;
+      margin-top: 2px;
+      align-items: center;
+      justify-content: flex-end;
+      font-size: 13px;
+    }
+    .attachments-pager button {
+      background: #42507a;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      padding: 2px 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .attachments-pager button:disabled {
+      background: #a9b6d1;
+      cursor: not-allowed;
+    }
     @media (max-width: 1100px) {
       .content-area { flex-direction: column; }
       .notes-list { width: 100%; max-width: 100%; }
@@ -271,6 +294,35 @@
       .notes-list { width: 100%; max-width: 100%; }
       .note-viewer { width: 100%; margin-top: 16px; }
     }
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed; z-index: 1001; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(40, 50, 77, 0.18); display: none; align-items: center; justify-content: center;
+    }
+    .modal {
+      background: #fff; border-radius: 12px; padding: 22px 18px; min-width: 320px; max-width: 90vw; max-height: 90vh; box-shadow: 0 4px 16px rgba(41,52,77,0.15); overflow-y: auto;
+      position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 8px; right: 14px; font-size: 22px; color: #b20000; cursor: pointer; background: none; border: none;
+    }
+    .modal-content { margin-top: 10px; }
+    .modal-folder-list ul {
+      list-style: none; margin: 0; padding: 0;
+    }
+    .modal-folder-list li {
+      margin-bottom: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-folder-list a { color: #42507a; text-decoration: underline; cursor: pointer;}
+    .modal-folder-list .folder-icon { color: #42507a; font-size: 18px;}
+    .modal-filename { font-weight: bold;}
+    .modal-preview-img { max-width: 90vw; max-height: 65vh; display: block; margin: 0 auto 8px auto; }
+    .modal-preview-pdf { width: 70vw; height: 65vh; border: none; display: block; margin: 0 auto 8px auto;}
+    .modal-preview-text { white-space: pre-wrap; font-size: 15px; background: #f7f7fa; padding: 8px; border-radius: 6px; max-height: 60vh; overflow-y: auto;}
+    .modal-preview-unsupported { color: #b20000; font-size: 15px; text-align: center;}
   </style>
 </head>
 <body>
@@ -316,6 +368,15 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal for file/folder preview -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modal">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <div class="modal-content" id="modalContent"></div>
+    </div>
+  </div>
+
   <script>
     // ====== GitHub 雲端同步設置 ======
     const repoOwner = "lhwongn-bot";
@@ -333,6 +394,12 @@
     let editingNoteId = null;
     let editingAttachments = [];
     let viewingNote = null;
+
+    // 附件列表分頁
+    let attachmentsPage = 0;
+    const attachmentsPageSize = 4;
+    let attachmentsTotal = 0;
+    let currentAttachments = [];
 
     // Load subjects/notes from GitHub (notes.json)
     async function loadNotesFromGithub() {
@@ -746,28 +813,60 @@
 
     function renderSubjectAttachmentsList() {
       const ulDiv = document.getElementById('subjectAttachmentsList');
-      ulDiv.innerHTML = `<div style="margin-bottom: 8px;"><b>${currentSubject} 附件列表</b></div><ul id="subjectAttachmentsUl"></ul>`;
+      ulDiv.innerHTML = `<div style="margin-bottom: 8px;"><b>${currentSubject} 附件列表</b></div><ul id="subjectAttachmentsUl"></ul><div class="attachments-pager" id="attachmentsPager"></div>`;
       const ul = document.getElementById('subjectAttachmentsUl');
       fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
         .then(res => res.json())
         .then(files => {
           ul.innerHTML = '';
-          if (Array.isArray(files)) {
-            files.forEach(file => {
-              if (file.type === "file") {
-                const li = document.createElement('li');
-                li.innerHTML = `<a href="#" onclick="openInViewer('${file.download_url}');return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)
-                  <button onclick="deleteSubjectAttachment('${file.name}')">刪除</button>`;
-                ul.appendChild(li);
-              }
-            });
+          currentAttachments = Array.isArray(files) ? files : [];
+          attachmentsTotal = currentAttachments.length;
+          // Pagination
+          const start = attachmentsPage * attachmentsPageSize;
+          const end = Math.min(start + attachmentsPageSize, attachmentsTotal);
+          for(let i=start;i<end;i++){
+            const file = currentAttachments[i];
+            if (file.type === "file") {
+              const li = document.createElement('li');
+              li.innerHTML = `<a href="#" onclick="openInViewer('${file.download_url}','${file.name}');return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)
+                <button onclick="deleteSubjectAttachment('${file.name}')">刪除</button>`;
+              ul.appendChild(li);
+            } else if (file.type === "dir") {
+              const li = document.createElement('li');
+              li.innerHTML = `<span class="folder-icon">📁</span>
+                <a href="#" onclick="openFolderInViewer('${file.path}');return false;">${file.name}</a>`;
+              ul.appendChild(li);
+            }
+          }
+          // Pager
+          const pager = document.getElementById('attachmentsPager');
+          if (attachmentsTotal > attachmentsPageSize) {
+            pager.innerHTML = `<button onclick="attachmentsPrev()"${attachmentsPage===0?" disabled":""}>上一頁</button>
+              <span>${start+1}-${end} / ${attachmentsTotal}</span>
+              <button onclick="attachmentsNext()"${end>=attachmentsTotal?" disabled":""}>下一頁</button>`;
           } else {
-            ul.innerHTML = "<li>暫無附件</li>";
+            pager.innerHTML = '';
           }
         })
         .catch(() => {
           ul.innerHTML = "<li>暫無附件</li>";
+          document.getElementById('attachmentsPager').innerHTML = '';
+          currentAttachments = [];
+          attachmentsTotal = 0;
         });
+    }
+
+    function attachmentsPrev() {
+      if (attachmentsPage > 0) {
+        attachmentsPage--;
+        renderSubjectAttachmentsList();
+      }
+    }
+    function attachmentsNext() {
+      if ((attachmentsPage+1)*attachmentsPageSize < attachmentsTotal) {
+        attachmentsPage++;
+        renderSubjectAttachmentsList();
+      }
     }
 
     function deleteSubjectAttachment(fileName) {
@@ -836,21 +935,87 @@
         });
     }
 
-    // 打開文件時用 viewer 頁籤 (pdf, 圖片, 文字、office…)
-    function openInViewer(downloadUrl) {
-      const lower = downloadUrl.toLowerCase();
-      if (lower.endsWith('.pdf')) {
-        window.open(downloadUrl, '_blank');
-      } else if (lower.match(/\.(jpg|jpeg|png|gif|bmp)$/)) {
-        window.open(downloadUrl, '_blank');
-      } else if (lower.match(/\.(txt|csv|md|log)$/)) {
-        window.open(downloadUrl, '_blank');
-      } else if (lower.match(/\.(doc|docx|ppt|pptx|xls|xlsx)$/)) {
-        const viewer = "https://docs.google.com/viewer?url=" + encodeURIComponent(downloadUrl) + "&embedded=true";
-        window.open(viewer, '_blank');
-      } else {
-        window.open(downloadUrl, '_blank');
+    // =========== Modal =============
+    function showModal(html) {
+      document.getElementById('modalContent').innerHTML = html;
+      document.getElementById('modalOverlay').style.display = 'flex';
+    }
+    function closeModal() {
+      document.getElementById('modalOverlay').style.display = 'none';
+      document.getElementById('modalContent').innerHTML = '';
+    }
+
+    // 打開文件（預覽）或下載
+    function openInViewer(downloadUrl, fileName) {
+      // Detect file type
+      const lower = (downloadUrl||'').toLowerCase();
+      // images
+      if (lower.match(/\.(jpg|jpeg|png|gif|bmp)$/)) {
+        showModal(`<div class="modal-filename">${fileName||''}</div>
+          <img src="${downloadUrl}" class="modal-preview-img" />
+        `);
       }
+      // pdf
+      else if (lower.endsWith('.pdf')) {
+        showModal(`<div class="modal-filename">${fileName||''}</div>
+          <iframe src="${downloadUrl}" class="modal-preview-pdf"></iframe>
+        `);
+      }
+      // text
+      else if (lower.match(/\.(txt|csv|md|log)$/)) {
+        fetch(downloadUrl)
+          .then(res => res.text())
+          .then(txt => {
+            showModal(`<div class="modal-filename">${fileName||''}</div>
+              <div class="modal-preview-text">${escapeHtml(txt)}</div>
+            `);
+          })
+          .catch(()=>showModal(`<div class="modal-filename">${fileName||''}</div>
+            <div class="modal-preview-unsupported">無法載入檔案內容</div>`));
+      }
+      // Office files: open in Google Docs Viewer
+      else if (lower.match(/\.(doc|docx|ppt|pptx|xls|xlsx)$/)) {
+        const viewer = "https://docs.google.com/viewer?url=" + encodeURIComponent(downloadUrl) + "&embedded=true";
+        showModal(`<div class="modal-filename">${fileName||''}</div>
+          <iframe src="${viewer}" class="modal-preview-pdf"></iframe>
+        `);
+      }
+      // Zip, rar, etc.
+      else if (lower.match(/\.(zip|rar|7z|tar|gz|exe|apk)$/)) {
+        showModal(`<div class="modal-filename">${fileName||''}</div>
+          <div class="modal-preview-unsupported">不支援預覽此類型檔案</div>
+        `);
+      }
+      // Other: try iframe preview
+      else {
+        showModal(`<div class="modal-filename">${fileName||''}</div>
+          <iframe src="${downloadUrl}" class="modal-preview-pdf"></iframe>
+        `);
+      }
+    }
+
+    // 打開資料夾，瀏覽內容
+    function openFolderInViewer(folderPath) {
+      fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}`)
+        .then(res => res.json())
+        .then(files => {
+          if (!Array.isArray(files) || files.length===0) {
+            showModal('<div class="modal-preview-unsupported">資料夾為空</div>');
+            return;
+          }
+          let html = `<div class="modal-folder-list"><ul>`;
+          files.forEach(file=>{
+            if (file.type==="file") {
+              html += `<li><a href="#" onclick="openInViewer('${file.download_url}','${file.name}');return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)</li>`;
+            } else if (file.type==="dir") {
+              html += `<li><span class="folder-icon">📁</span>
+                <a href="#" onclick="openFolderInViewer('${file.path}');return false;">${file.name}</a></li>`;
+            }
+          });
+          html += `</ul></div>`;
+          showModal(html);
+        })
+        .catch(()=>showModal('<div class="modal-preview-unsupported">無法載入資料夾內容</div>'));
     }
 
     // ====== 初始化 ======
