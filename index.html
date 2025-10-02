@@ -279,21 +279,6 @@
       background: #a9b6d1;
       cursor: not-allowed;
     }
-    @media (max-width: 1100px) {
-      .content-area { flex-direction: column; }
-      .notes-list { width: 100%; max-width: 100%; }
-      .note-viewer { width: 100%; margin-top: 16px; }
-    }
-    @media (max-width: 800px) {
-      .container { flex-direction: column; }
-      .sidebar { width: 100%; flex-direction: row; padding: 8px;}
-      .main { padding: 8px;}
-      .subject-attachment-bar { flex-direction: column; align-items: flex-start;}
-      .note-attachments-list, .viewer-attachments-list { flex-direction: column; gap: 4px; }
-      .content-area { flex-direction: column; }
-      .notes-list { width: 100%; max-width: 100%; }
-      .note-viewer { width: 100%; margin-top: 16px; }
-    }
     /* Modal styles */
     .modal-overlay {
       position: fixed; z-index: 1001; top: 0; left: 0; right: 0; bottom: 0;
@@ -323,6 +308,21 @@
     .modal-preview-pdf { width: 70vw; height: 65vh; border: none; display: block; margin: 0 auto 8px auto;}
     .modal-preview-text { white-space: pre-wrap; font-size: 15px; background: #f7f7fa; padding: 8px; border-radius: 6px; max-height: 60vh; overflow-y: auto;}
     .modal-preview-unsupported { color: #b20000; font-size: 15px; text-align: center;}
+    @media (max-width: 1100px) {
+      .content-area { flex-direction: column; }
+      .notes-list { width: 100%; max-width: 100%; }
+      .note-viewer { width: 100%; margin-top: 16px; }
+    }
+    @media (max-width: 800px) {
+      .container { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; padding: 8px;}
+      .main { padding: 8px;}
+      .subject-attachment-bar { flex-direction: column; align-items: flex-start;}
+      .note-attachments-list, .viewer-attachments-list { flex-direction: column; gap: 4px; }
+      .content-area { flex-direction: column; }
+      .notes-list { width: 100%; max-width: 100%; }
+      .note-viewer { width: 100%; margin-top: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -368,7 +368,6 @@
       </div>
     </div>
   </div>
-
   <!-- Modal for file/folder preview -->
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal" id="modal">
@@ -376,7 +375,6 @@
       <div class="modal-content" id="modalContent"></div>
     </div>
   </div>
-
   <script>
     // ====== GitHub 雲端同步設置 ======
     const repoOwner = "lhwongn-bot";
@@ -387,7 +385,6 @@
     function getGithubToken() { return localStorage.getItem('github_token') || ''; }
     function setGithubToken(token) { localStorage.setItem('github_token', token); }
 
-    // ==== 雲端資料 ====
     let subjects = [];
     let notes = [];
     let currentSubject = "";
@@ -401,17 +398,15 @@
     let attachmentsTotal = 0;
     let currentAttachments = [];
 
-    // Load subjects/notes from GitHub (notes.json)
     async function loadNotesFromGithub() {
       const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${notesJsonPath}`;
       try {
         const res = await fetch(apiUrl);
         if (res.status === 404) {
-          // 初次使用，初始化
           subjects = ["數學","英文","電腦"];
           notes = [];
           currentSubject = subjects[0];
-          await saveNotesToGithub(); // 建立 notes.json
+          await saveNotesToGithub();
         } else {
           const data = await res.json();
           const json = JSON.parse(atob(data.content));
@@ -429,13 +424,11 @@
       renderSubjectAttachmentUI();
     }
 
-    // Save subjects/notes to GitHub (notes.json)
     async function saveNotesToGithub() {
       const token = getGithubToken();
       if (!token) { alert("請輸入 GitHub Token"); return; }
       const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${notesJsonPath}`;
       let sha = null;
-      // 先查 sha
       try {
         const res = await fetch(apiUrl, {
           headers: {
@@ -453,7 +446,6 @@
         content: btoa(JSON.stringify({subjects,notes})),
         ...(sha ? {sha} : {})
       };
-      // PUT notes.json
       await fetch(apiUrl, {
         method: "PUT",
         headers: {
@@ -545,7 +537,6 @@
           (n.content && n.content.toLowerCase().includes(kw))
         );
       }
-      // 至少顯示4項，若不足則補空白項
       const minItems = 4;
       const noteCount = filtered.length;
       list.innerHTML = '';
@@ -632,14 +623,13 @@
       editingAttachments = [];
     }
 
-    // 編輯筆記時的附件 chip
     function renderNoteAttachmentsEdit() {
       const cont = document.getElementById('noteAttachmentsList');
       cont.innerHTML = '';
       editingAttachments.forEach((att, idx) => {
         const chip = document.createElement('span');
         chip.className = 'att-chip';
-        chip.innerHTML = `<a href="#" onclick="openInViewer('${att.url}');return false;">${att.name}</a>
+        chip.innerHTML = `<a href="#" onclick="openInViewer('${att.url}','${att.name}',event);return false;">${att.name}</a>
           <button type="button" title="移除" onclick="removeAttachmentFromNote(${idx});event.stopPropagation();">x</button>`;
         cont.appendChild(chip);
       });
@@ -659,7 +649,6 @@
       renderNoteAttachmentsEdit();
     }
 
-    // 筆記預覽（多附件）
     function renderNoteViewer(note) {
       const viewer = document.getElementById('noteViewer');
       if (!note) {
@@ -682,7 +671,7 @@
             ${(Array.isArray(note.attachments) && note.attachments.length)
               ? note.attachments.map(att=>`
               <span class="att-chip">
-                <a href="#" onclick="openInViewer('${att.url}');return false;">${att.name}</a>
+                <a href="#" onclick="openInViewer('${att.url}','${att.name}',event);return false;">${att.name}</a>
               </span>
               `).join('')
               : '<span style="color:#999;">無</span>'}
@@ -703,7 +692,6 @@
       });
     }
 
-    // ====== GitHub 附件管理 ======
     function base64ArrayBuffer(arrayBuffer) {
       let base64 = '';
       const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -795,7 +783,7 @@
           .then(res => res.json())
           .then(res => {
             if (res.content && res.content.download_url) {
-              msgSpan.innerHTML = `✅ 上傳成功：<a href="#" onclick="openInViewer('${res.content.download_url}');return false;">${file.name}</a>`;
+              msgSpan.innerHTML = `✅ 上傳成功：<a href="#" onclick="openInViewer('${res.content.download_url}','${file.name}',event);return false;">${file.name}</a>`;
               renderSubjectAttachmentsList();
               loadAttachmentSelectForNote();
             } else if (res && res.message) {
@@ -821,24 +809,22 @@
           ul.innerHTML = '';
           currentAttachments = Array.isArray(files) ? files : [];
           attachmentsTotal = currentAttachments.length;
-          // Pagination
           const start = attachmentsPage * attachmentsPageSize;
           const end = Math.min(start + attachmentsPageSize, attachmentsTotal);
           for(let i=start;i<end;i++){
             const file = currentAttachments[i];
             if (file.type === "file") {
               const li = document.createElement('li');
-              li.innerHTML = `<a href="#" onclick="openInViewer('${file.download_url}','${file.name}');return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)
+              li.innerHTML = `<a href="#" onclick="openInViewer('${file.download_url}','${file.name}',event);return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)
                 <button onclick="deleteSubjectAttachment('${file.name}')">刪除</button>`;
               ul.appendChild(li);
             } else if (file.type === "dir") {
               const li = document.createElement('li');
               li.innerHTML = `<span class="folder-icon">📁</span>
-                <a href="#" onclick="openFolderInViewer('${file.path}');return false;">${file.name}</a>`;
+                <a href="#" onclick="openFolderInViewer('${file.path}',event);return false;">${file.name}</a>`;
               ul.appendChild(li);
             }
           }
-          // Pager
           const pager = document.getElementById('attachmentsPager');
           if (attachmentsTotal > attachmentsPageSize) {
             pager.innerHTML = `<button onclick="attachmentsPrev()"${attachmentsPage===0?" disabled":""}>上一頁</button>
@@ -911,7 +897,6 @@
         });
     }
 
-    // 附件選擇：編輯筆記時用，支援多附件
     function loadAttachmentSelectForNote() {
       fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${mainAttachmentRoot}/${encodeURIComponent(currentSubject)}`)
         .then(res => res.json())
@@ -945,23 +930,19 @@
       document.getElementById('modalContent').innerHTML = '';
     }
 
-    // 打開文件（預覽）或下載
-    function openInViewer(downloadUrl, fileName) {
-      // Detect file type
+    function openInViewer(downloadUrl, fileName, event) {
+      if (event) event.preventDefault();
       const lower = (downloadUrl||'').toLowerCase();
-      // images
       if (lower.match(/\.(jpg|jpeg|png|gif|bmp)$/)) {
         showModal(`<div class="modal-filename">${fileName||''}</div>
           <img src="${downloadUrl}" class="modal-preview-img" />
         `);
       }
-      // pdf
       else if (lower.endsWith('.pdf')) {
         showModal(`<div class="modal-filename">${fileName||''}</div>
-          <iframe src="${downloadUrl}" class="modal-preview-pdf"></iframe>
+          <iframe src="https://docs.google.com/viewer?url=${encodeURIComponent(downloadUrl)}&embedded=true" class="modal-preview-pdf"></iframe>
         `);
       }
-      // text
       else if (lower.match(/\.(txt|csv|md|log)$/)) {
         fetch(downloadUrl)
           .then(res => res.text())
@@ -973,20 +954,17 @@
           .catch(()=>showModal(`<div class="modal-filename">${fileName||''}</div>
             <div class="modal-preview-unsupported">無法載入檔案內容</div>`));
       }
-      // Office files: open in Google Docs Viewer
       else if (lower.match(/\.(doc|docx|ppt|pptx|xls|xlsx)$/)) {
         const viewer = "https://docs.google.com/viewer?url=" + encodeURIComponent(downloadUrl) + "&embedded=true";
         showModal(`<div class="modal-filename">${fileName||''}</div>
           <iframe src="${viewer}" class="modal-preview-pdf"></iframe>
         `);
       }
-      // Zip, rar, etc.
       else if (lower.match(/\.(zip|rar|7z|tar|gz|exe|apk)$/)) {
         showModal(`<div class="modal-filename">${fileName||''}</div>
           <div class="modal-preview-unsupported">不支援預覽此類型檔案</div>
         `);
       }
-      // Other: try iframe preview
       else {
         showModal(`<div class="modal-filename">${fileName||''}</div>
           <iframe src="${downloadUrl}" class="modal-preview-pdf"></iframe>
@@ -994,8 +972,8 @@
       }
     }
 
-    // 打開資料夾，瀏覽內容
-    function openFolderInViewer(folderPath) {
+    function openFolderInViewer(folderPath, event) {
+      if (event) event.preventDefault();
       fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}`)
         .then(res => res.json())
         .then(files => {
@@ -1006,10 +984,10 @@
           let html = `<div class="modal-folder-list"><ul>`;
           files.forEach(file=>{
             if (file.type==="file") {
-              html += `<li><a href="#" onclick="openInViewer('${file.download_url}','${file.name}');return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)</li>`;
+              html += `<li><a href="#" onclick="openInViewer('${file.download_url}','${file.name}',event);return false;">${file.name}</a> (${(file.size/1024).toFixed(1)} KB)</li>`;
             } else if (file.type==="dir") {
               html += `<li><span class="folder-icon">📁</span>
-                <a href="#" onclick="openFolderInViewer('${file.path}');return false;">${file.name}</a></li>`;
+                <a href="#" onclick="openFolderInViewer('${file.path}',event);return false;">${file.name}</a></li>`;
             }
           });
           html += `</ul></div>`;
@@ -1018,12 +996,10 @@
         .catch(()=>showModal('<div class="modal-preview-unsupported">無法載入資料夾內容</div>'));
     }
 
-    // ====== 初始化 ======
     window.addEventListener('DOMContentLoaded', () => {
       loadNotesFromGithub();
     });
 
-    // 新增科目
     async function addSubject() {
       let name = prompt("請輸入新科目名稱：");
       if (!name) return;
