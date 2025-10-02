@@ -553,7 +553,6 @@
       filtered.forEach(n => {
         const div = document.createElement('div');
         div.className = 'note-item' + ((viewingNote && viewingNote.id===n.id) ? ' active':'');
-        div.onclick = () => { renderNoteViewer(n); cancelEdit(); };
         div.innerHTML = `<div>
             <div class="note-title">${n.title||'(無標題)'}</div>
             <div class="note-tags">${n.tags ? n.tags.join(', ') : ''}</div>
@@ -562,6 +561,7 @@
             <span class="note-date">${n.updated_at ? n.updated_at.substr(0,10) : ''}</span>
             <button class="note-delete-btn" title="刪除" onclick="deleteNote('${n.id}');event.stopPropagation();">🗑</button>
           </div>`;
+        div.onclick = () => { renderNoteViewer(n); cancelEdit(); };
         list.appendChild(div);
       });
       for(let i=noteCount;i<minItems;i++){
